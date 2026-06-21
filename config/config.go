@@ -50,6 +50,13 @@ type Config struct {
 	ScoringWeightsPath  string `mapstructure:"SCORING_WEIGHTS_PATH"`
 	ScoringEngineVersion string `mapstructure:"SCORING_ENGINE_VERSION"`
 
+	SMTPHost     string `mapstructure:"SMTP_HOST"`
+	SMTPPort     int    `mapstructure:"SMTP_PORT"`
+	SMTPUsername string `mapstructure:"SMTP_USERNAME"`
+	SMTPPassword string `mapstructure:"SMTP_PASSWORD"`
+	SMTPFrom     string `mapstructure:"SMTP_FROM"`
+	AppBaseURL   string `mapstructure:"APP_BASE_URL"`
+
 	PrometheusPort int    `mapstructure:"OTEL_EXPORTER_PROMETHEUS_PORT"`
 	LogLevel       string `mapstructure:"LOG_LEVEL"`
 
@@ -77,6 +84,9 @@ func Load() (*Config, error) {
 	v.SetDefault("SCORING_ENGINE_VERSION", "v1.0.0")
 	v.SetDefault("OTEL_EXPORTER_PROMETHEUS_PORT", 9090)
 	v.SetDefault("LOG_LEVEL", "info")
+	v.SetDefault("SMTP_PORT", 587)
+	v.SetDefault("SMTP_FROM", "noreply@careergps.app")
+	v.SetDefault("APP_BASE_URL", "http://localhost:5173")
 
 	_ = v.ReadInConfig() // .env is optional — env vars take precedence
 

@@ -55,7 +55,14 @@ export default function LoginPage({ mode }: { mode: 'login' | 'register' }) {
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Password</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-sm text-gray-400">Password</label>
+                {mode === 'login' && (
+                  <Link to="/forgot-password" className="text-xs text-indigo-400 hover:text-indigo-300">
+                    Forgot password?
+                  </Link>
+                )}
+              </div>
               <input
                 type="password"
                 value={password}

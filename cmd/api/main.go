@@ -25,6 +25,7 @@ import (
 	s3infra "careergps/internal/infrastructure/s3"
 	"careergps/internal/interfaces/http/handlers"
 	httpserver "careergps/internal/interfaces/http"
+	"careergps/pkg/mailer"
 )
 
 func main() {
@@ -75,8 +76,10 @@ func main() {
 
 	// Auth
 	sessionRepo := postgres.NewSessionRepo(pool)
-	authSvc := auth.NewService(userRepo, sessionRepo, privateKey, publicKey,
-		cfg.AccessTokenTTLMin, cfg.RefreshTokenTTLDays)
+	resetRepo := postgres.NewPasswordResetRepo(pool)
+	emailer := mailer.New(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUsername, cfg.SMTPPassword, cfg.SMTPFrom)
+	authSvc := auth.NewService(userRepo, sessionRepo, resetRepo, emailer, cfg.AppBaseURL,
+		privateKey, publicKey, cfg.AccessTokenTTLMin, cfg.RefreshTokenTTLDays)
 
 	// LLM
 	redisCache := redisinfra.NewCache(redisClient)

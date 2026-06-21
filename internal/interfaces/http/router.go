@@ -50,6 +50,8 @@ func SetupRouter(
 		authGroup.POST("/login", authHandler.Login)
 		authGroup.POST("/refresh", authHandler.Refresh)
 		authGroup.POST("/logout", authHandler.Logout)
+		authGroup.POST("/forgot-password", authHandler.ForgotPassword)
+		authGroup.POST("/reset-password", authHandler.ResetPassword)
 	}
 
 	authed := v1.Group("")

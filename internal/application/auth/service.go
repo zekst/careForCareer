@@ -16,6 +16,8 @@ import (
 	"careergps/pkg/apperrors"
 )
 
+const resetTokenTTL = time.Hour
+
 const bcryptCost = 12
 
 type TokenPair struct {
@@ -29,9 +31,17 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
+// Emailer is a minimal interface for sending password-reset emails.
+type Emailer interface {
+	SendPasswordReset(to, resetURL string) error
+}
+
 type Service struct {
 	userRepo        authdomain.UserRepository
 	sessionRepo     authdomain.SessionRepository
+	resetRepo       authdomain.PasswordResetRepository
+	mailer          Emailer
+	appBaseURL      string
 	privateKey      interface{} // *rsa.PrivateKey
 	publicKey       interface{} // *rsa.PublicKey
 	accessTokenTTL  time.Duration
@@ -41,12 +51,18 @@ type Service struct {
 func NewService(
 	userRepo authdomain.UserRepository,
 	sessionRepo authdomain.SessionRepository,
+	resetRepo authdomain.PasswordResetRepository,
+	mailer Emailer,
+	appBaseURL string,
 	privateKey, publicKey interface{},
 	accessTTLMin, refreshTTLDays int,
 ) *Service {
 	return &Service{
 		userRepo:        userRepo,
 		sessionRepo:     sessionRepo,
+		resetRepo:       resetRepo,
+		mailer:          mailer,
+		appBaseURL:      appBaseURL,
 		privateKey:      privateKey,
 		publicKey:       publicKey,
 		accessTokenTTL:  time.Duration(accessTTLMin) * time.Minute,
@@ -107,6 +123,49 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (*TokenPair,
 
 func (s *Service) Logout(ctx context.Context, refreshToken string) error {
 	return s.sessionRepo.Revoke(ctx, refreshToken)
+}
+
+// ForgotPassword generates a reset token and emails the user. Always returns
+// nil to avoid leaking whether the email is registered.
+func (s *Service) ForgotPassword(ctx context.Context, email string) error {
+	user, err := s.userRepo.GetByEmail(ctx, email)
+	if err != nil {
+		// Don't reveal whether the email exists.
+		return nil
+	}
+
+	now := time.Now().UTC()
+	rawToken := generateRefreshToken() // reuse same secure random generator
+	t := &authdomain.PasswordResetToken{
+		ID:        uuid.New(),
+		UserID:    user.ID,
+		Token:     rawToken,
+		ExpiresAt: now.Add(resetTokenTTL),
+		CreatedAt: now,
+	}
+	if err := s.resetRepo.Create(ctx, t); err != nil {
+		return fmt.Errorf("auth: create reset token: %w", err)
+	}
+
+	resetURL := fmt.Sprintf("%s/reset-password?token=%s", s.appBaseURL, rawToken)
+	_ = s.mailer.SendPasswordReset(email, resetURL) // best-effort
+	return nil
+}
+
+func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) error {
+	t, err := s.resetRepo.GetByToken(ctx, token)
+	if err != nil || t.Used || time.Now().After(t.ExpiresAt) {
+		return apperrors.ErrUnauthorized
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcryptCost)
+	if err != nil {
+		return fmt.Errorf("auth: hash password: %w", err)
+	}
+	if err := s.userRepo.UpdatePassword(ctx, t.UserID, string(hash)); err != nil {
+		return fmt.Errorf("auth: update password: %w", err)
+	}
+	return s.resetRepo.MarkUsed(ctx, token)
 }
 
 func (s *Service) issueTokens(ctx context.Context, userID uuid.UUID) (*TokenPair, error) {

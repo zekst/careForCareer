@@ -57,6 +57,14 @@ func (r *UserRepo) GetByID(ctx context.Context, id uuid.UUID) (*authdomain.User,
 	return scanUser(row)
 }
 
+func (r *UserRepo) UpdatePassword(ctx context.Context, userID uuid.UUID, passwordHash string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE users SET password_hash=$1, updated_at=NOW() WHERE id=$2`,
+		passwordHash, userID,
+	)
+	return err
+}
+
 func scanUser(row interface{ Scan(dest ...any) error }) (*authdomain.User, error) {
 	var u authdomain.User
 	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.CreatedAt, &u.UpdatedAt)

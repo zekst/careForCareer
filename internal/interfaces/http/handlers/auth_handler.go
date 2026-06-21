@@ -36,6 +36,15 @@ type logoutRequest struct {
 	RefreshToken string `json:"refresh_token" binding:"required"`
 }
 
+type forgotPasswordRequest struct {
+	Email string `json:"email" binding:"required,email"`
+}
+
+type resetPasswordRequest struct {
+	Token    string `json:"token" binding:"required"`
+	Password string `json:"password" binding:"required,min=8"`
+}
+
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req registerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -112,6 +121,34 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func (h *AuthHandler) ForgotPassword(c *gin.Context) {
+	var req forgotPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, errorEnvelope("VALIDATION_ERROR", err.Error()))
+		return
+	}
+	// Always 200 to avoid email enumeration.
+	_ = h.authSvc.ForgotPassword(c.Request.Context(), req.Email)
+	c.JSON(http.StatusOK, gin.H{"message": "If that email is registered, a reset link has been sent."})
+}
+
+func (h *AuthHandler) ResetPassword(c *gin.Context) {
+	var req resetPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, errorEnvelope("VALIDATION_ERROR", err.Error()))
+		return
+	}
+	if err := h.authSvc.ResetPassword(c.Request.Context(), req.Token, req.Password); err != nil {
+		if errors.Is(err, apperrors.ErrUnauthorized) {
+			c.JSON(http.StatusBadRequest, errorEnvelope("INVALID_TOKEN", "Reset link is invalid or has expired"))
+			return
+		}
+		c.JSON(http.StatusInternalServerError, errorEnvelope("INTERNAL_ERROR", "Could not reset password"))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Password updated successfully."})
 }
 
 func errorEnvelope(code, message string) gin.H {
