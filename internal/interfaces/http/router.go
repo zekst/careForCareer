@@ -71,7 +71,6 @@ func SetupRouter(
 		// Coach
 		authed.POST("/coach/sessions", coachHandler.CreateSession)
 		authed.GET("/coach/sessions/:id", coachHandler.GetSession)
-		authed.POST("/coach/sessions/:id/messages", coachHandler.SendMessage)
 		authed.GET("/coach/sessions/:id/stream", coachHandler.Stream)
 
 		// Jobs
@@ -84,14 +83,13 @@ func SetupRouter(
 		authed.POST("/coach/jd-sessions", prepHandler.CreateJDSession)
 		authed.GET("/coach/jd-sessions/:id/stream", prepHandler.StreamJD)
 
-		// Career pivot (requires profile for YOE context)
-		authed.POST("/pivot/analyse", pivotHandler.Analyse)
 	}
 
-	// Guest-accessible routes (no auth required) — student track + public job search
+	// Guest-accessible routes (no auth required) — student track, pivot, public job search
 	open := v1.Group("")
 	{
 		open.POST("/student/assess", studentHandler.Assess)
+		open.POST("/pivot/analyse", pivotHandler.Analyse)
 	}
 
 	return r

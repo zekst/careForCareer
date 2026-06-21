@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import ReactMarkdown from 'react-markdown'
 import api, { getAccessToken, apiBase } from '../api/client'
 import { getProfile, type Candidate } from '../api/candidate'
 import { useAuth } from '../context/AuthContext'
@@ -89,8 +90,9 @@ export default function DashboardPage() {
 
       // SSE stream — absolute URL required for cross-origin Vercel→Render deployment
       const token = getAccessToken()
+      const sseBase = apiBase || window.location.origin
       const evtSource = new EventSource(
-        `${apiBase}/api/v1/coach/jd-sessions/${sid}/stream?message=${encodeURIComponent(userMsg)}&token=${token}`
+        `${sseBase}/api/v1/coach/jd-sessions/${sid}/stream?message=${encodeURIComponent(userMsg)}&token=${token}`
       )
 
       let buffer = ''
@@ -110,20 +112,9 @@ export default function DashboardPage() {
         })
       })
 
-      evtSource.addEventListener('done', () => {
-        evtSource.close()
-        setStreaming(false)
-      })
-
-      evtSource.addEventListener('error', () => {
-        evtSource.close()
-        setStreaming(false)
-      })
-
-      evtSource.onerror = () => {
-        evtSource.close()
-        setStreaming(false)
-      }
+      const cleanup = () => { evtSource.close(); setStreaming(false) }
+      evtSource.addEventListener('done', cleanup)
+      evtSource.onerror = cleanup
     } catch (err: any) {
       setStreaming(false)
       setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Coach unavailable right now.' }])
@@ -135,7 +126,7 @@ export default function DashboardPage() {
       {/* Header */}
       <header className="border-b border-gray-800 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <span className="text-xl font-bold text-indigo-400">CareerGPS</span>
+          <span className="text-xl font-bold text-indigo-400">careForCareer</span>
           {candidate && (
             <span className={`${TIER_COLORS[candidate.tier]} text-white text-xs font-semibold px-2.5 py-1 rounded-full`}>
               {candidate.tier_label}
@@ -239,7 +230,11 @@ export default function DashboardPage() {
 
               {jdSubmitted ? (
                 <div className="bg-emerald-900/40 border border-emerald-700 rounded-lg px-4 py-3 text-emerald-300 text-sm">
-                  ✓ JD submitted. Analysis is running — switch to Coach to get your prep plan.
+                  ✓ JD submitted — check your{' '}
+                  <button onClick={() => setTab('position')} className="underline font-semibold">Positioning</button>{' '}
+                  score, then visit{' '}
+                  <button onClick={() => setTab('coach')} className="underline font-semibold">Coach</button>{' '}
+                  for your prep plan.
                 </div>
               ) : (
                 <>
@@ -247,9 +242,13 @@ export default function DashboardPage() {
                     value={jdText}
                     onChange={e => setJdText(e.target.value)}
                     rows={12}
+                    maxLength={20000}
                     placeholder="Paste the full job description here…"
                     className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-indigo-500 resize-none"
                   />
+                  {jdText.length > 15000 && (
+                    <p className="text-xs text-yellow-500">{jdText.length}/20000 characters — getting long, trimming recommended</p>
+                  )}
                   <button onClick={submitJD} disabled={!jdText.trim()}
                     className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium rounded-lg py-2.5 transition-colors">
                     Analyse JD →
@@ -302,6 +301,11 @@ export default function DashboardPage() {
               </div>
 
               <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+                {!jdText && !jobFromParams && messages.length === 0 && (
+                  <div className="bg-amber-900/20 border border-amber-800/40 rounded-lg px-4 py-3 text-amber-300 text-sm">
+                    💡 For best results, add a <button onClick={() => setTab('jd')} className="underline font-semibold">target job description</button> first — the coach uses it to give role-specific advice.
+                  </div>
+                )}
                 {messages.length === 0 && (
                   <div className="text-center text-gray-600 text-sm mt-8">
                     <p className="text-3xl mb-3">🧭</p>
@@ -311,11 +315,13 @@ export default function DashboardPage() {
                 )}
                 {messages.map((m, i) => (
                   <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap
+                    <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm
                       ${m.role === 'user'
                         ? 'bg-indigo-600 text-white rounded-br-sm'
-                        : 'bg-gray-800 text-gray-200 rounded-bl-sm'}`}>
-                      {m.content}
+                        : 'bg-gray-800 text-gray-200 rounded-bl-sm prose prose-invert prose-sm max-w-none'}`}>
+                      {m.role === 'assistant'
+                        ? <ReactMarkdown>{m.content}</ReactMarkdown>
+                        : m.content}
                       {streaming && i === messages.length - 1 && m.role === 'assistant' && (
                         <span className="inline-block w-1.5 h-4 bg-gray-400 ml-1 animate-pulse" />
                       )}
@@ -331,6 +337,7 @@ export default function DashboardPage() {
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
                   placeholder="Ask your coach…"
+                  maxLength={2000}
                   disabled={streaming}
                   className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-indigo-500 disabled:opacity-50"
                 />

@@ -41,13 +41,19 @@ func (r *CoachSessionRepo) GetByID(ctx context.Context, id uuid.UUID) (*coach.Co
 		SELECT id, candidate_id, assessment_id, context_snapshot, expires_at, created_at
 		FROM coach_sessions WHERE id=$1`, id)
 	var s coach.CoachSession
-	err := row.Scan(&s.ID, &s.CandidateID, &s.AssessmentID, &s.ContextSnapshot, &s.ExpiresAt, &s.CreatedAt)
+	var assessmentID *uuid.UUID
+	var contextSnapshot []byte
+	err := row.Scan(&s.ID, &s.CandidateID, &assessmentID, &contextSnapshot, &s.ExpiresAt, &s.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, apperrors.ErrNotFound
 		}
 		return nil, fmt.Errorf("coach_session: scan: %w", err)
 	}
+	if assessmentID != nil {
+		s.AssessmentID = *assessmentID
+	}
+	s.ContextSnapshot = string(contextSnapshot)
 	return &s, nil
 }
 
@@ -65,9 +71,15 @@ func (r *CoachSessionRepo) ListByCandidateID(ctx context.Context, candidateID uu
 	var sessions []*coach.CoachSession
 	for rows.Next() {
 		var s coach.CoachSession
-		if err := rows.Scan(&s.ID, &s.CandidateID, &s.AssessmentID, &s.ContextSnapshot, &s.ExpiresAt, &s.CreatedAt); err != nil {
+		var assessmentID *uuid.UUID
+		var contextSnapshot []byte
+		if err := rows.Scan(&s.ID, &s.CandidateID, &assessmentID, &contextSnapshot, &s.ExpiresAt, &s.CreatedAt); err != nil {
 			return nil, "", err
 		}
+		if assessmentID != nil {
+			s.AssessmentID = *assessmentID
+		}
+		s.ContextSnapshot = string(contextSnapshot)
 		sessions = append(sessions, &s)
 	}
 	return sessions, "", nil

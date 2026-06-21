@@ -26,14 +26,14 @@ func NewPivotHandler(candidateRepo *postgres.CandidateRepo, llmProvider llm.LLMP
 // pivotRequest is the body for POST /api/v1/pivot/analyse
 type pivotRequest struct {
 	// What the candidate is pivoting TO
-	TargetRole     string `json:"target_role" binding:"required"`        // e.g. "Program Manager"
-	TargetCompany  string `json:"target_company"`                        // optional specific company
-	CompanyType    string `json:"company_type"`                          // "faang" | "startup" | "mid-size" | "any"
+	TargetRole     string `json:"target_role" binding:"required,max=100"` // e.g. "Program Manager"
+	TargetCompany  string `json:"target_company"`
+	CompanyType    string `json:"company_type"`                           // "faang" | "startup" | "mid-size" | "any"
 	// Optional JD — if provided, analysis is grounded in a real posting
-	JobDescription string `json:"job_description"`
+	JobDescription string `json:"job_description" binding:"omitempty,max=20000"`
 	// Candidate's current context (supplements profile)
-	CurrentRole    string   `json:"current_role"`    // e.g. "SDE-2 at Amazon"
-	CurrentSkills  []string `json:"current_skills"`  // from resume parse or manual
+	CurrentRole   string   `json:"current_role" binding:"omitempty,max=200"` // e.g. "SDE-2 at Amazon"
+	CurrentSkills []string `json:"current_skills"`                           // from resume parse or manual
 }
 
 // ── Response types ────────────────────────────────────────────────────────────

@@ -51,11 +51,13 @@ export function buildJDSessionRequest(
   }
 }
 
-// SSE stream URL for JD sessions. Uses an absolute URL so EventSource works
+// SSE stream URL for JD sessions. Must be an absolute URL so EventSource works
 // across the Vercel (frontend) → Render (backend) cross-origin deployment.
+// Falls back to window.location.origin for local dev (picked up by Vite proxy).
 export function jdSessionStreamURL(sessionId: string, message: string): string {
   const token = getAccessToken()
-  return `${apiBase}/api/v1/coach/jd-sessions/${sessionId}/stream?message=${encodeURIComponent(message)}&token=${token}`
+  const base = apiBase || (typeof window !== 'undefined' ? window.location.origin : '')
+  return `${base}/api/v1/coach/jd-sessions/${sessionId}/stream?message=${encodeURIComponent(message)}&token=${token}`
 }
 
 // ── Prep plan ─────────────────────────────────────────────────────────────

@@ -58,8 +58,17 @@ func (h *ResumeHandler) Upload(c *gin.Context) {
 	}
 	defer file.Close()
 
-	if header.Size > 5*1024*1024 { // 5 MB limit
+	if header.Size == 0 {
+		c.JSON(http.StatusBadRequest, errorEnvelope("EMPTY_FILE", "Uploaded file is empty"))
+		return
+	}
+	if header.Size > 5*1024*1024 {
 		c.JSON(http.StatusBadRequest, errorEnvelope("FILE_TOO_LARGE", "Resume must be under 5 MB"))
+		return
+	}
+	ct := header.Header.Get("Content-Type")
+	if ct != "application/pdf" && ct != "application/octet-stream" {
+		c.JSON(http.StatusBadRequest, errorEnvelope("INVALID_FILE_TYPE", "Only PDF files are accepted"))
 		return
 	}
 

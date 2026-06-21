@@ -37,6 +37,7 @@ type Config struct {
 	RefreshTokenTTLDays  int    `mapstructure:"REFRESH_TOKEN_TTL_DAYS"`
 
 	AnthropicAPIKey  string `mapstructure:"ANTHROPIC_API_KEY"`
+	ApifyAPIToken    string `mapstructure:"APIFY_API_TOKEN"`
 	OpenAIAPIKey     string `mapstructure:"OPENAI_API_KEY"`
 	GeminiAPIKey     string `mapstructure:"GEMINI_API_KEY"`
 	LLMPrimary       string `mapstructure:"LLM_PRIMARY_PROVIDER"`

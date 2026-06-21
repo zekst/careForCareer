@@ -186,10 +186,19 @@ func (s *Service) SendMessage(ctx context.Context, userID uuid.UUID, sessionID u
 		return nil, fmt.Errorf("coach: persist user message: %w", err)
 	}
 
-	// Assemble fresh context from deterministic sources
-	coachCtx, err := s.assembleContext(ctx, sess.CandidateID, sess.AssessmentID)
-	if err != nil {
-		return nil, fmt.Errorf("coach: assemble context: %w", err)
+	// For JD sessions (AssessmentID == uuid.Nil), reconstruct context from the stored snapshot
+	var coachCtx *coach.CoachContext
+	if sess.AssessmentID == uuid.Nil {
+		var snap coach.CoachContext
+		if err := json.Unmarshal([]byte(sess.ContextSnapshot), &snap); err != nil {
+			snap = coach.CoachContext{}
+		}
+		coachCtx = &snap
+	} else {
+		coachCtx, err = s.assembleContext(ctx, sess.CandidateID, sess.AssessmentID)
+		if err != nil {
+			return nil, fmt.Errorf("coach: assemble context: %w", err)
+		}
 	}
 
 	// Load conversation history (last N turns)

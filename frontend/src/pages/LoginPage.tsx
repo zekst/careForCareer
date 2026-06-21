@@ -33,7 +33,7 @@ export default function LoginPage({ mode }: { mode: 'login' | 'register' }) {
     <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold text-white">CareerGPS</h1>
+          <h1 className="text-3xl font-bold text-white">careForCareer</h1>
           <p className="text-gray-400 mt-2">Your AI-powered interview readiness coach</p>
         </div>
 
@@ -62,6 +62,7 @@ export default function LoginPage({ mode }: { mode: 'login' | 'register' }) {
                 onChange={e => setPassword(e.target.value)}
                 required
                 minLength={8}
+                maxLength={72}
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500"
                 placeholder="••••••••"
               />

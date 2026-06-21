@@ -19,6 +19,7 @@ import (
 const bcryptCost = 12
 
 type TokenPair struct {
+	UserID       uuid.UUID
 	AccessToken  string
 	RefreshToken string
 	ExpiresIn    int // seconds
@@ -137,6 +138,7 @@ func (s *Service) issueTokens(ctx context.Context, userID uuid.UUID) (*TokenPair
 	}
 
 	return &TokenPair{
+		UserID:       userID,
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		ExpiresIn:    int(s.accessTokenTTL.Seconds()),

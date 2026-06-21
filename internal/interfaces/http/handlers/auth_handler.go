@@ -75,6 +75,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
+		"user_id":       tokens.UserID,
 		"access_token":  tokens.AccessToken,
 		"refresh_token": tokens.RefreshToken,
 		"expires_in":    tokens.ExpiresIn,
@@ -93,6 +94,7 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
+		"user_id":       tokens.UserID,
 		"access_token":  tokens.AccessToken,
 		"refresh_token": tokens.RefreshToken,
 		"expires_in":    tokens.ExpiresIn,
@@ -105,7 +107,10 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, errorEnvelope("VALIDATION_ERROR", err.Error()))
 		return
 	}
-	_ = h.authSvc.Logout(c.Request.Context(), req.RefreshToken)
+	if err := h.authSvc.Logout(c.Request.Context(), req.RefreshToken); err != nil && !errors.Is(err, apperrors.ErrNotFound) {
+		c.JSON(http.StatusInternalServerError, errorEnvelope("INTERNAL_ERROR", "Logout failed"))
+		return
+	}
 	c.Status(http.StatusNoContent)
 }
 

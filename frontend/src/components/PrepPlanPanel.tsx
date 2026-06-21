@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import ReactMarkdown from 'react-markdown'
 import { generatePrepPlan, createJDSession, buildJDSessionRequest, jdSessionStreamURL, type PrepPlanResponse, type PrepWeek } from '../api/prep'
 import type { PositioningResult } from '../api/positioning'
 import type { Job } from '../api/jobs'
@@ -23,6 +24,7 @@ export default function PrepPlanPanel({ job, result, yoe = 0 }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
+  const [sessionLoading, setSessionLoading] = useState(false)
   const [coachError, setCoachError] = useState('')
   const [coachTab, setCoachTab] = useState<'plan' | 'chat'>('plan')
 
@@ -37,17 +39,13 @@ export default function PrepPlanPanel({ job, result, yoe = 0 }: Props) {
         tier_fit: result.tier_fit,
         company_bar: result.company_bar,
         time_to_ready: result.time_to_ready,
-        skill_gaps: result.skill_gaps.map(s => s.skill),
-        action_plan: result.action_plan.map(a => a.title),
+        skill_gaps: (result.skill_gaps ?? []).map(s => s.skill),
+        action_plan: (result.action_plan ?? []).map(a => a.title),
         interview_focus: result.interview_focus,
         yoe,
       })
-      if ((res.data as any).parse_error) {
-        setPlanError('Plan generation failed — please try again')
-      } else {
-        setPlan(res.data)
-        setExpandedWeek(1)
-      }
+      setPlan(res.data)
+      setExpandedWeek(1)
     } catch (err: any) {
       setPlanError(err.response?.data?.error?.message ?? 'Failed to generate plan')
     } finally {
@@ -56,15 +54,18 @@ export default function PrepPlanPanel({ job, result, yoe = 0 }: Props) {
   }
 
   const startCoach = async () => {
-    if (sessionId) return // already started
+    if (sessionId || sessionLoading) return
+    setSessionLoading(true)
+    setCoachError('')
     try {
       const req = buildJDSessionRequest(job.title, job.company, job.location, job.description, result)
       const res = await createJDSession(req)
       setSessionId(res.data.session_id)
-      // Send a greeting message automatically
       sendMessage('Hi! Give me a quick summary of what I need to focus on to get this role.', res.data.session_id)
     } catch {
-      setCoachError('Could not start coach session')
+      setCoachError('Could not connect to coach. Check your connection and try again.')
+    } finally {
+      setSessionLoading(false)
     }
   }
 
@@ -99,7 +100,6 @@ export default function PrepPlanPanel({ job, result, yoe = 0 }: Props) {
 
       const cleanup = () => { evtSource.close(); setStreaming(false) }
       evtSource.addEventListener('done', cleanup)
-      evtSource.addEventListener('error', cleanup)
       evtSource.onerror = cleanup
     } catch {
       setStreaming(false)
@@ -210,23 +210,38 @@ export default function PrepPlanPanel({ job, result, yoe = 0 }: Props) {
             {messages.length === 0 && !streaming && (
               <div className="text-center text-gray-600 text-sm py-8">
                 <p className="text-2xl mb-2">🎯</p>
-                <p>Starting your role-specific prep coach…</p>
+                {sessionLoading
+                  ? <><p className="text-gray-400">Connecting to coach…</p>
+                      <span className="inline-block w-4 h-4 border-2 border-gray-500/30 border-t-gray-400 rounded-full animate-spin mt-2" /></>
+                  : <p>Starting your role-specific prep coach…</p>}
               </div>
             )}
             {messages.map((m, i) => (
               <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[85%] rounded-2xl px-3 py-2.5 text-sm whitespace-pre-wrap leading-relaxed
+                <div className={`max-w-[85%] rounded-2xl px-3 py-2.5 text-sm leading-relaxed
                   ${m.role === 'user'
                     ? 'bg-indigo-600 text-white rounded-br-sm'
-                    : 'bg-gray-700 text-gray-200 rounded-bl-sm'}`}>
-                  {m.content}
+                    : 'bg-gray-700 text-gray-200 rounded-bl-sm prose prose-invert prose-sm max-w-none'}`}>
+                  {m.role === 'assistant'
+                    ? <ReactMarkdown>{m.content}</ReactMarkdown>
+                    : m.content}
                   {streaming && i === messages.length - 1 && m.role === 'assistant' && (
                     <span className="inline-block w-1.5 h-3.5 bg-gray-400 ml-0.5 animate-pulse" />
                   )}
                 </div>
               </div>
             ))}
-            {coachError && <p className="text-xs text-red-400 text-center">{coachError}</p>}
+            {coachError && (
+              <div className="text-center space-y-2">
+                <p className="text-xs text-red-400">{coachError}</p>
+                {!sessionId && (
+                  <button onClick={startCoach} disabled={sessionLoading}
+                    className="text-xs text-indigo-400 hover:text-indigo-300 border border-indigo-800 px-3 py-1 rounded-lg transition-colors">
+                    Retry connection
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Quick prompts */}
@@ -252,10 +267,11 @@ export default function PrepPlanPanel({ job, result, yoe = 0 }: Props) {
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
               placeholder="Ask about this specific role…"
-              disabled={streaming || !sessionId}
+              maxLength={2000}
+              disabled={streaming || !sessionId || sessionLoading}
               className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-indigo-500 disabled:opacity-50"
             />
-            <button onClick={() => sendMessage()} disabled={!input.trim() || streaming || !sessionId}
+            <button onClick={() => sendMessage()} disabled={!input.trim() || streaming || !sessionId || sessionLoading}
               className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white px-3 py-2 rounded-lg text-sm transition-colors">
               →
             </button>

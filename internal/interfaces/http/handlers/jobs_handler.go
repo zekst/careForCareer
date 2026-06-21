@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -40,9 +39,9 @@ type JobsHandler struct {
 	candidateRepo *postgres.CandidateRepo
 }
 
-func NewJobsHandler(redisClient *redis.Client, candidateRepo *postgres.CandidateRepo) *JobsHandler {
+func NewJobsHandler(redisClient *redis.Client, candidateRepo *postgres.CandidateRepo, apifyToken string) *JobsHandler {
 	return &JobsHandler{
-		apifyToken:    os.Getenv("APIFY_API_TOKEN"),
+		apifyToken:    apifyToken,
 		httpClient:    &http.Client{Timeout: 30 * time.Second},
 		redisClient:   redisClient,
 		candidateRepo: candidateRepo,

@@ -39,10 +39,10 @@ func NewPrepHandler(coachSvc *coachapp.Service, candidateRepo *postgres.Candidat
 // ── JD-Aware Coach Session ────────────────────────────────────────────────────
 
 type createJDSessionRequest struct {
-	JobTitle       string   `json:"job_title" binding:"required"`
-	Company        string   `json:"company"`
-	Location       string   `json:"location"`
-	JDText         string   `json:"jd_text"`
+	JobTitle       string   `json:"job_title" binding:"required,max=200"`
+	Company        string   `json:"company" binding:"omitempty,max=200"`
+	Location       string   `json:"location" binding:"omitempty,max=200"`
+	JDText         string   `json:"jd_text" binding:"omitempty,max=20000"`
 	OverallMatch   int      `json:"overall_match"`
 	TierFit        string   `json:"tier_fit"`
 	CompanyBar     string   `json:"company_bar"`
@@ -121,6 +121,10 @@ func (h *PrepHandler) StreamJD(c *gin.Context) {
 	content := c.Query("message")
 	if content == "" {
 		c.JSON(http.StatusBadRequest, errorEnvelope("MISSING_MESSAGE", "message query param required"))
+		return
+	}
+	if len(content) > 2000 {
+		c.JSON(http.StatusBadRequest, errorEnvelope("MESSAGE_TOO_LONG", "Message must be under 2000 characters"))
 		return
 	}
 
@@ -311,12 +315,7 @@ Rules:
 
 	var plan llmPlan
 	if err := json.Unmarshal([]byte(raw), &plan); err != nil {
-		// Return debug info so frontend can surface a meaningful error
-		c.JSON(http.StatusOK, gin.H{
-			"parse_error": true,
-			"error":       err.Error(),
-			"raw_prefix":  truncate(resp.Content, 500),
-		})
+		c.JSON(http.StatusInternalServerError, errorEnvelope("LLM_PARSE_ERROR", "Prep plan generation returned unexpected format — please try again"))
 		return
 	}
 

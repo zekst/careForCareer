@@ -11,17 +11,19 @@ import (
 	"github.com/google/uuid"
 
 	coachapp "careergps/internal/application/coach"
-	"careergps/internal/interfaces/http/middleware"
+	"careergps/internal/infrastructure/postgres"
 	"careergps/internal/infrastructure/sse"
+	"careergps/internal/interfaces/http/middleware"
 	"careergps/pkg/apperrors"
 )
 
 type CoachHandler struct {
-	coachSvc *coachapp.Service
+	coachSvc      *coachapp.Service
+	candidateRepo *postgres.CandidateRepo
 }
 
-func NewCoachHandler(coachSvc *coachapp.Service) *CoachHandler {
-	return &CoachHandler{coachSvc: coachSvc}
+func NewCoachHandler(coachSvc *coachapp.Service, candidateRepo *postgres.CandidateRepo) *CoachHandler {
+	return &CoachHandler{coachSvc: coachSvc, candidateRepo: candidateRepo}
 }
 
 type createSessionRequest struct {
@@ -51,10 +53,13 @@ func (h *CoachHandler) CreateSession(c *gin.Context) {
 		return
 	}
 
-	// Derive candidateID from userID — handled in service via candidate lookup
-	// For simplicity, pass userID as candidateID placeholder; resolved in service
-	_ = userID
-	sess, err := h.coachSvc.CreateSession(c.Request.Context(), userID, assessmentID)
+	// Resolve candidate.id from user.id — coach_sessions FK references candidates(id)
+	cand, err := h.candidateRepo.GetByUserID(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, errorEnvelope("NOT_FOUND", "Create your profile first"))
+		return
+	}
+	sess, err := h.coachSvc.CreateSession(c.Request.Context(), cand.ID, assessmentID)
 	if err != nil {
 		if errors.Is(err, apperrors.ErrNotFound) {
 			c.JSON(http.StatusNotFound, errorEnvelope("NOT_FOUND", "Assessment not found"))

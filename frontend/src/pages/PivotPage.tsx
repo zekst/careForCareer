@@ -28,28 +28,6 @@ export default function PivotPage() {
   const [error, setError] = useState('')
   const [result, setResult] = useState<PivotResult | null>(null)
 
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-        <div className="text-center space-y-4 max-w-sm mx-auto px-4">
-          <p className="text-4xl">🔄</p>
-          <h2 className="text-white font-bold text-xl">Career Pivot Analysis</h2>
-          <p className="text-gray-400 text-sm">Sign in to analyse your pivot — we need your profile (YOE, current company) to give you accurate advice.</p>
-          <div className="flex gap-3 justify-center">
-            <button onClick={() => navigate('/login')}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition-colors">
-              Sign in
-            </button>
-            <button onClick={() => navigate('/register')}
-              className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-semibold px-5 py-2.5 rounded-lg transition-colors border border-gray-700">
-              Create account
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   const handleAnalyse = async () => {
     const role = targetRole === 'Other' ? targetRoleCustom : targetRole
     if (!role) return
@@ -74,8 +52,8 @@ export default function PivotPage() {
     <div className="min-h-screen bg-gray-950 text-white">
       {/* Header */}
       <div className="border-b border-gray-800 px-6 py-4 flex items-center justify-between">
-        <button onClick={() => navigate('/dashboard')} className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors text-sm">
-          ← Dashboard
+        <button onClick={() => navigate(isAuthenticated ? '/dashboard' : '/')} className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors text-sm">
+          ← {isAuthenticated ? 'Dashboard' : 'Home'}
         </button>
         <span className="text-xs bg-purple-900/50 text-purple-300 border border-purple-800 px-2.5 py-1 rounded-full font-medium">🔄 Career Pivot</span>
         <div />
@@ -109,6 +87,7 @@ export default function PivotPage() {
                   value={targetRoleCustom}
                   onChange={e => setTargetRoleCustom(e.target.value)}
                   placeholder="e.g. Strategy Consultant, VC Associate..."
+                  maxLength={100}
                   className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-purple-500"
                 />
               )}
@@ -121,6 +100,7 @@ export default function PivotPage() {
                 value={currentRole}
                 onChange={e => setCurrentRole(e.target.value)}
                 placeholder="e.g. SDE-2 at Amazon, Backend engineer at a startup..."
+                maxLength={200}
                 className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-purple-500"
               />
             </div>
@@ -131,6 +111,7 @@ export default function PivotPage() {
                 value={currentSkills}
                 onChange={e => setCurrentSkills(e.target.value)}
                 placeholder="e.g. Java, distributed systems, AWS, system design..."
+                maxLength={500}
                 className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-purple-500"
               />
             </div>
@@ -143,6 +124,7 @@ export default function PivotPage() {
                 value={jd}
                 onChange={e => setJD(e.target.value)}
                 rows={5}
+                maxLength={20000}
                 placeholder="Paste the job description for a specific role you're targeting..."
                 className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 text-sm focus:outline-none focus:border-purple-500 resize-none"
               />

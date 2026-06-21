@@ -167,12 +167,7 @@ JOB DESCRIPTION:
 	raw := extractJSON(resp.Content)
 
 	if err := json.Unmarshal([]byte(raw), &result); err != nil {
-		// Return the raw content for debugging, but still 200 with a fallback
-		c.JSON(http.StatusOK, gin.H{
-			"parse_error": true,
-			"raw":         raw,
-			"error":       err.Error(),
-		})
+		c.JSON(http.StatusInternalServerError, errorEnvelope("LLM_PARSE_ERROR", "Positioning analysis returned unexpected format — please try again"))
 		return
 	}
 
