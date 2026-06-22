@@ -42,7 +42,7 @@ type JobsHandler struct {
 func NewJobsHandler(redisClient *redis.Client, candidateRepo *postgres.CandidateRepo, apifyToken string) *JobsHandler {
 	return &JobsHandler{
 		apifyToken:    apifyToken,
-		httpClient:    &http.Client{Timeout: 30 * time.Second},
+		httpClient:    &http.Client{Timeout: 60 * time.Second},
 		redisClient:   redisClient,
 		candidateRepo: candidateRepo,
 	}
@@ -199,18 +199,21 @@ func tierSummary(cand *candidate.Candidate) string {
 
 // fetchFromApify calls the Apify LinkedIn Jobs Scraper actor.
 func (h *JobsHandler) fetchFromApify(ctx context.Context, query, location string, limit int) ([]Job, error) {
-	// Use apify/linkedin-jobs-scraper actor
-	actorID := "hKByXkMQaC5Qt9UMG" // Apify linkedin-jobs-scraper
+	actorID := "hKByXkMQaC5Qt9UMN" // curious_coder/linkedin-jobs-scraper
 
+	// Actor requires a LinkedIn search URL, not raw keywords.
+	searchURL := fmt.Sprintf(
+		"https://www.linkedin.com/jobs/search/?keywords=%s&location=%s&position=1&pageNum=0",
+		url.QueryEscape(query), url.QueryEscape(location),
+	)
 	payload := map[string]interface{}{
-		"queries":  []string{query},
-		"location": location,
-		"count":    limit,
+		"urls":  []string{searchURL},
+		"count": limit,
 	}
 
 	payloadBytes, _ := json.Marshal(payload)
 
-	runURL := fmt.Sprintf("https://api.apify.com/v2/acts/%s/run-sync-get-dataset-items?token=%s&timeout=25",
+	runURL := fmt.Sprintf("https://api.apify.com/v2/acts/%s/run-sync-get-dataset-items?token=%s&timeout=55",
 		actorID, h.apifyToken)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, runURL, strings.NewReader(string(payloadBytes)))
