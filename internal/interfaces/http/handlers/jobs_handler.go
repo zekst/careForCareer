@@ -85,9 +85,15 @@ func (h *JobsHandler) Search(c *gin.Context) {
 
 	var jobs []Job
 	var err error
+	var apifyErr string
 
 	if h.apifyToken != "" {
 		jobs, err = h.fetchFromApify(c.Request.Context(), searchQuery, location, limit)
+		if err != nil {
+			apifyErr = err.Error()
+		}
+	} else {
+		apifyErr = "token_not_set"
 	}
 
 	// Fallback to mock data if Apify fails or token not set
@@ -103,10 +109,11 @@ func (h *JobsHandler) Search(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"jobs":     jobs,
-		"total":    len(jobs),
-		"query":    q,
-		"location": location,
+		"jobs":       jobs,
+		"total":      len(jobs),
+		"query":      q,
+		"location":   location,
+		"_debug_err": apifyErr,
 	})
 }
 
