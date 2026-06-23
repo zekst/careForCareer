@@ -42,7 +42,7 @@ type JobsHandler struct {
 func NewJobsHandler(redisClient *redis.Client, candidateRepo *postgres.CandidateRepo, apifyToken string) *JobsHandler {
 	return &JobsHandler{
 		apifyToken:    apifyToken,
-		httpClient:    &http.Client{Timeout: 60 * time.Second},
+		httpClient:    &http.Client{Timeout: 125 * time.Second},
 		redisClient:   redisClient,
 		candidateRepo: candidateRepo,
 	}
@@ -206,6 +206,9 @@ func (h *JobsHandler) fetchFromApify(ctx context.Context, query, location string
 		"https://www.linkedin.com/jobs/search/?keywords=%s&location=%s&position=1&pageNum=0",
 		url.QueryEscape(query), url.QueryEscape(location),
 	)
+	if limit < 10 {
+		limit = 10 // actor minimum
+	}
 	payload := map[string]interface{}{
 		"urls":  []string{searchURL},
 		"count": limit,
@@ -213,7 +216,8 @@ func (h *JobsHandler) fetchFromApify(ctx context.Context, query, location string
 
 	payloadBytes, _ := json.Marshal(payload)
 
-	runURL := fmt.Sprintf("https://api.apify.com/v2/acts/%s/run-sync-get-dataset-items?token=%s&timeout=55",
+	// LinkedIn scraping typically takes 60-120 seconds; use 110s Apify timeout.
+	runURL := fmt.Sprintf("https://api.apify.com/v2/acts/%s/run-sync-get-dataset-items?token=%s&timeout=110",
 		actorID, h.apifyToken)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, runURL, strings.NewReader(string(payloadBytes)))
@@ -224,7 +228,7 @@ func (h *JobsHandler) fetchFromApify(ctx context.Context, query, location string
 
 	resp, err := h.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("apify request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -234,12 +238,16 @@ func (h *JobsHandler) fetchFromApify(ctx context.Context, query, location string
 	}
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return nil, fmt.Errorf("apify returned %d", resp.StatusCode)
+		snippet := string(body)
+		if len(snippet) > 200 {
+			snippet = snippet[:200]
+		}
+		return nil, fmt.Errorf("apify returned %d: %s", resp.StatusCode, snippet)
 	}
 
 	var raw []map[string]interface{}
 	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("apify response parse failed: %w", err)
 	}
 
 	jobs := make([]Job, 0, len(raw))
@@ -247,15 +255,19 @@ func (h *JobsHandler) fetchFromApify(ctx context.Context, query, location string
 		if i >= limit {
 			break
 		}
+		id := getString(item, "id", "jobId", "job_id")
+		if id == "" {
+			id = fmt.Sprintf("linkedin-%d", i)
+		}
 		job := Job{
-			ID:     getString(item, "id", fmt.Sprintf("linkedin-%d", i)),
-			Title:  getString(item, "title", getString(item, "position", "")),
-			Company: getString(item, "company", getString(item, "companyName", "")),
-			Location: getString(item, "location", ""),
-			ApplyURL: getString(item, "url", getString(item, "applyUrl", getString(item, "jobUrl", ""))),
-			Description: getString(item, "description", getString(item, "descriptionText", "")),
-			PostedAt: getString(item, "publishedAt", ""),
-			Source:  "linkedin",
+			ID:          id,
+			Title:       getString(item, "title", "position", "jobTitle"),
+			Company:     getString(item, "company", "companyName", "company_name"),
+			Location:    getString(item, "location", "jobLocation"),
+			ApplyURL:    getString(item, "url", "applyUrl", "jobUrl", "link"),
+			Description: getString(item, "description", "descriptionText", "jobDescription"),
+			PostedAt:    getString(item, "publishedAt", "postedAt", "datePosted"),
+			Source:      "linkedin",
 		}
 		if job.Title != "" {
 			jobs = append(jobs, job)
