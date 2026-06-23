@@ -80,18 +80,13 @@ func (h *JobsHandler) Search(c *gin.Context) {
 		}
 	}
 
-	// Build search query combining keywords and location
-	searchQuery := q
-	if location != "" {
-		searchQuery = fmt.Sprintf("%s %s", q, location)
-	}
-
 	var jobs []Job
 	var err error
 	var apifyErr string
 
 	if h.apifyToken != "" {
-		jobs, err = h.fetchFromApify(c.Request.Context(), searchQuery, location, limit)
+		// bebity actor takes title and location as separate fields
+		jobs, err = h.fetchFromApify(c.Request.Context(), q, location, limit)
 		if err != nil {
 			apifyErr = err.Error()
 			h.log.Error("apify search fetch failed", zap.String("query", q), zap.Error(err))
@@ -100,13 +95,16 @@ func (h *JobsHandler) Search(c *gin.Context) {
 		apifyErr = "token_not_set"
 	}
 
-	// Fallback to mock data if Apify fails or token not set
-	if err != nil || h.apifyToken == "" {
+	// Fallback to mock data if Apify fails, token not set, or returned zero results
+	if err != nil || h.apifyToken == "" || len(jobs) == 0 {
 		jobs = h.mockJobs(q, location, limit)
+		if apifyErr == "" && h.apifyToken != "" {
+			apifyErr = "zero_results_from_apify"
+		}
 	}
 
-	// Cache results for 5 minutes
-	if h.redisClient != nil && len(jobs) > 0 {
+	// Cache results for 5 minutes (only real results, not mock fallback)
+	if h.redisClient != nil && len(jobs) > 0 && apifyErr == "" {
 		if b, jsonErr := json.Marshal(jobs); jsonErr == nil {
 			h.redisClient.Set(c.Request.Context(), cacheKey, b, 5*time.Minute)
 		}
@@ -160,7 +158,7 @@ func (h *JobsHandler) Suggested(c *gin.Context) {
 	var jobs []Job
 	var apifyErr string
 	if h.apifyToken != "" {
-		jobs, err = h.fetchFromApify(c.Request.Context(), query+" "+location, location, 8)
+		jobs, err = h.fetchFromApify(c.Request.Context(), query, location, 8)
 		if err != nil {
 			apifyErr = err.Error()
 			h.log.Error("apify suggested fetch failed", zap.String("query", query), zap.Error(err))
@@ -168,8 +166,11 @@ func (h *JobsHandler) Suggested(c *gin.Context) {
 	} else {
 		apifyErr = "token_not_set"
 	}
-	if err != nil || h.apifyToken == "" {
+	if err != nil || h.apifyToken == "" || len(jobs) == 0 {
 		jobs = h.mockJobs(query, location, 8)
+		if apifyErr == "" && h.apifyToken != "" {
+			apifyErr = "zero_results_from_apify"
+		}
 	}
 
 	// Cache for 10 minutes (only cache real results, not mock fallback)
@@ -216,27 +217,18 @@ func tierSummary(cand *candidate.Candidate) string {
 	return base
 }
 
-// fetchFromApify calls the Apify LinkedIn Jobs Scraper actor.
+// fetchFromApify calls the Apify LinkedIn Jobs Scraper actor (bebity/linkedin-jobs-scraper).
+// Input schema: title (keywords), location (string), rows (int, max 1000).
 func (h *JobsHandler) fetchFromApify(ctx context.Context, query, location string, limit int) ([]Job, error) {
-	// Use stable username~actorname format instead of opaque actor ID.
-	// curious_coder/linkedin-jobs-scraper on apify.com
-	const actorRef = "curious_coder~linkedin-jobs-scraper"
+	const actorRef = "bebity~linkedin-jobs-scraper"
 
-	// Build a LinkedIn search URL (actor requires a full search URL, not raw keywords).
-	searchURL := fmt.Sprintf(
-		"https://www.linkedin.com/jobs/search/?keywords=%s&location=%s&position=1&pageNum=0",
-		url.QueryEscape(query), url.QueryEscape(location),
-	)
-	if limit < 10 {
-		limit = 10 // actor minimum
+	if limit < 1 {
+		limit = 10
 	}
-	// Apify actors standardize on startUrls (array of {url} objects) + maxItems.
-	// Also send the legacy url/count fields so the actor works regardless of version.
 	payload := map[string]interface{}{
-		"startUrls": []map[string]interface{}{{"url": searchURL}},
-		"maxItems":  limit,
-		"urls":      []string{searchURL},
-		"count":     limit,
+		"title":    query,
+		"location": location,
+		"rows":     limit,
 	}
 
 	payloadBytes, _ := json.Marshal(payload)
