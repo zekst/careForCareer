@@ -1,0 +1,127 @@
+version: "1"
+
+# ---------------------------------------------------------------------------
+# careForCareer — Render infrastructure declaration
+#
+# All secrets use sync: false so their values stay in the Render dashboard
+# (never committed to the repo). Set them once via the Render UI; Render
+# propagates them to every deploy automatically.
+# ---------------------------------------------------------------------------
+
+services:
+  # ── API (Go backend) ──────────────────────────────────────────────────────
+  - type: web
+    name: careforcareer-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      # ── Runtime ──────────────────────────────────────────────────────────
+      - key: APP_ENV
+        value: production
+      - key: API_PORT
+        value: "8080"
+      - key: LOG_LEVEL
+        value: info
+
+      # ── Database (required) ───────────────────────────────────────────────
+      - key: DATABASE_URL
+        sync: false          # Set in Render dashboard → postgres internal URL
+
+      # ── Redis (required) ──────────────────────────────────────────────────
+      - key: REDIS_ADDR
+        sync: false          # e.g. redis-xyz.render.com:6379
+      - key: REDIS_PASSWORD
+        sync: false
+
+      # ── S3 / Backblaze B2 (required) ─────────────────────────────────────
+      - key: S3_ENDPOINT
+        sync: false          # e.g. https://s3.us-west-004.backblazeb2.com
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_REGION
+        sync: false          # e.g. us-west-004
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+
+      # ── JWT signing keys (required) ───────────────────────────────────────
+      # Prefer base64-encoded PEM (B64 vars); the binary falls back to file
+      # paths only when both B64 vars are absent (local dev only).
+      - key: JWT_PRIVATE_KEY_B64
+        sync: false
+      - key: JWT_PUBLIC_KEY_B64
+        sync: false
+      # File-path fallbacks — leave blank in production when using B64 above.
+      - key: JWT_PRIVATE_KEY_PATH
+        sync: false
+      - key: JWT_PUBLIC_KEY_PATH
+        sync: false
+      - key: ACCESS_TOKEN_TTL_MINUTES
+        value: "15"
+      - key: REFRESH_TOKEN_TTL_DAYS
+        value: "7"
+
+      # ── LLM (required) ────────────────────────────────────────────────────
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: LLM_PRIMARY_PROVIDER
+        value: anthropic
+      - key: LLM_CACHE_TTL_HOURS
+        value: "24"
+      # Optional alternative LLM providers
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+
+      # ── Job scraping (optional — falls back to mock data if blank) ────────
+      - key: APIFY_API_TOKEN
+        sync: false          # Get from apify.com → Account → Integrations → API tokens
+
+      # ── SMTP / password-reset emails (required for forgot-password flow) ──
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        value: noreply@careforcareer.app
+      - key: APP_BASE_URL
+        sync: false          # e.g. https://careforcareer.onrender.com (or custom domain)
+
+      # ── Rate limits ───────────────────────────────────────────────────────
+      - key: COACH_DAILY_LIMIT
+        value: "20"
+      - key: RATE_LIMIT_UNAUTHENTICATED
+        value: "30"
+      - key: RATE_LIMIT_AUTHENTICATED
+        value: "100"
+
+      # ── Scoring engine ────────────────────────────────────────────────────
+      - key: SCORING_WEIGHTS_PATH
+        value: ./config/scoring_weights.yaml
+      - key: SCORING_ENGINE_VERSION
+        value: v1.0.0
+
+      # ── Observability ─────────────────────────────────────────────────────
+      - key: OTEL_EXPORTER_PROMETHEUS_PORT
+        value: "9090"
+
+  # ── Frontend (React/Vite static site) ────────────────────────────────────
+  - type: web
+    name: careforcareer-frontend
+    runtime: static
+    staticPublishPath: ./frontend/dist
+    buildCommand: cd frontend && npm ci && npm run build
+    envVars:
+      # Points the browser at the API service.
+      # Set to your API service's public URL, e.g. https://careforcareer-api.onrender.com
+      - key: VITE_API_URL
+        sync: false

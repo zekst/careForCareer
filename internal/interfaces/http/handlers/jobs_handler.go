@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 
 	"careergps/internal/domain/candidate"
 	"careergps/internal/infrastructure/postgres"
@@ -37,14 +38,16 @@ type JobsHandler struct {
 	httpClient    *http.Client
 	redisClient   *redis.Client
 	candidateRepo *postgres.CandidateRepo
+	log           *zap.Logger
 }
 
-func NewJobsHandler(redisClient *redis.Client, candidateRepo *postgres.CandidateRepo, apifyToken string) *JobsHandler {
+func NewJobsHandler(redisClient *redis.Client, candidateRepo *postgres.CandidateRepo, apifyToken string, log *zap.Logger) *JobsHandler {
 	return &JobsHandler{
 		apifyToken:    apifyToken,
 		httpClient:    &http.Client{Timeout: 125 * time.Second},
 		redisClient:   redisClient,
 		candidateRepo: candidateRepo,
+		log:           log,
 	}
 }
 
@@ -91,6 +94,7 @@ func (h *JobsHandler) Search(c *gin.Context) {
 		jobs, err = h.fetchFromApify(c.Request.Context(), searchQuery, location, limit)
 		if err != nil {
 			apifyErr = err.Error()
+			h.log.Error("apify search fetch failed", zap.String("query", q), zap.Error(err))
 		}
 	} else {
 		apifyErr = "token_not_set"
@@ -154,26 +158,34 @@ func (h *JobsHandler) Suggested(c *gin.Context) {
 	}
 
 	var jobs []Job
+	var apifyErr string
 	if h.apifyToken != "" {
 		jobs, err = h.fetchFromApify(c.Request.Context(), query+" "+location, location, 8)
+		if err != nil {
+			apifyErr = err.Error()
+			h.log.Error("apify suggested fetch failed", zap.String("query", query), zap.Error(err))
+		}
+	} else {
+		apifyErr = "token_not_set"
 	}
 	if err != nil || h.apifyToken == "" {
 		jobs = h.mockJobs(query, location, 8)
 	}
 
-	// Cache for 10 minutes
-	if h.redisClient != nil && len(jobs) > 0 {
+	// Cache for 10 minutes (only cache real results, not mock fallback)
+	if h.redisClient != nil && len(jobs) > 0 && apifyErr == "" {
 		if b, jsonErr := json.Marshal(jobs); jsonErr == nil {
 			h.redisClient.Set(c.Request.Context(), cacheKey, b, 10*time.Minute)
 		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"jobs":     jobs,
-		"total":    len(jobs),
-		"query":    query,
-		"location": location,
-		"based_on": tierSummary(cand),
+		"jobs":       jobs,
+		"total":      len(jobs),
+		"query":      query,
+		"location":   location,
+		"based_on":   tierSummary(cand),
+		"_debug_err": apifyErr,
 	})
 }
 
@@ -206,9 +218,11 @@ func tierSummary(cand *candidate.Candidate) string {
 
 // fetchFromApify calls the Apify LinkedIn Jobs Scraper actor.
 func (h *JobsHandler) fetchFromApify(ctx context.Context, query, location string, limit int) ([]Job, error) {
-	actorID := "hKByXkMQaC5Qt9UMN" // curious_coder/linkedin-jobs-scraper
+	// Use stable username~actorname format instead of opaque actor ID.
+	// curious_coder/linkedin-jobs-scraper on apify.com
+	const actorRef = "curious_coder~linkedin-jobs-scraper"
 
-	// Actor requires a LinkedIn search URL, not raw keywords.
+	// Build a LinkedIn search URL (actor requires a full search URL, not raw keywords).
 	searchURL := fmt.Sprintf(
 		"https://www.linkedin.com/jobs/search/?keywords=%s&location=%s&position=1&pageNum=0",
 		url.QueryEscape(query), url.QueryEscape(location),
@@ -216,16 +230,20 @@ func (h *JobsHandler) fetchFromApify(ctx context.Context, query, location string
 	if limit < 10 {
 		limit = 10 // actor minimum
 	}
+	// Apify actors standardize on startUrls (array of {url} objects) + maxItems.
+	// Also send the legacy url/count fields so the actor works regardless of version.
 	payload := map[string]interface{}{
-		"urls":  []string{searchURL},
-		"count": limit,
+		"startUrls": []map[string]interface{}{{"url": searchURL}},
+		"maxItems":  limit,
+		"urls":      []string{searchURL},
+		"count":     limit,
 	}
 
 	payloadBytes, _ := json.Marshal(payload)
 
 	// LinkedIn scraping typically takes 60-120 seconds; use 110s Apify timeout.
 	runURL := fmt.Sprintf("https://api.apify.com/v2/acts/%s/run-sync-get-dataset-items?token=%s&timeout=110",
-		actorID, h.apifyToken)
+		actorRef, h.apifyToken)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, runURL, strings.NewReader(string(payloadBytes)))
 	if err != nil {

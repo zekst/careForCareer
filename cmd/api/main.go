@@ -102,7 +102,7 @@ func main() {
 	resumeHandler := handlers.NewResumeHandler(resumeRepo, candidateRepo, storage)
 	assessmentHandler := handlers.NewAssessmentHandler(readinessRepo)
 	coachHandler := handlers.NewCoachHandler(coachSvc, candidateRepo)
-	jobsHandler := handlers.NewJobsHandler(redisClient, candidateRepo, cfg.ApifyAPIToken)
+	jobsHandler := handlers.NewJobsHandler(redisClient, candidateRepo, cfg.ApifyAPIToken, log)
 	positioningHandler := handlers.NewPositioningHandler(candidateRepo, cachedLLM)
 	prepHandler := handlers.NewPrepHandler(coachSvc, candidateRepo, cachedLLM)
 	pivotHandler := handlers.NewPivotHandler(candidateRepo, cachedLLM)
@@ -115,7 +115,7 @@ func main() {
 		Addr:         fmt.Sprintf(":%d", cfg.APIPort),
 		Handler:      router,
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 120 * time.Second, // SSE connections need longer write timeout
+		WriteTimeout: 150 * time.Second, // SSE + Apify job fetch (up to ~120 s)
 		IdleTimeout:  120 * time.Second,
 	}
 
