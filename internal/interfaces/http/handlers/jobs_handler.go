@@ -217,10 +217,10 @@ func tierSummary(cand *candidate.Candidate) string {
 	return base
 }
 
-// fetchFromApify calls the Apify LinkedIn Jobs Scraper actor (bebity/linkedin-jobs-scraper).
-// Input schema: title (keywords), location (string), rows (int, max 1000).
+// fetchFromApify calls the Apify LinkedIn Jobs Scraper actor (valig/linkedin-jobs-scraper).
+// Input schema: title (keywords), location (string), limit (int).
 func (h *JobsHandler) fetchFromApify(ctx context.Context, query, location string, limit int) ([]Job, error) {
-	const actorRef = "bebity~linkedin-jobs-scraper"
+	const actorRef = "valig~linkedin-jobs-scraper"
 
 	if limit < 1 {
 		limit = 10
@@ -228,7 +228,7 @@ func (h *JobsHandler) fetchFromApify(ctx context.Context, query, location string
 	payload := map[string]interface{}{
 		"title":    query,
 		"location": location,
-		"rows":     limit,
+		"limit":    limit,
 	}
 
 	payloadBytes, _ := json.Marshal(payload)
@@ -274,6 +274,12 @@ func (h *JobsHandler) fetchFromApify(ctx context.Context, query, location string
 		}
 		id := getString(item, "id", "jobId", "job_id")
 		if id == "" {
+			// valig actor returns id as integer
+			if v, ok := item["id"]; ok {
+				id = fmt.Sprintf("%v", v)
+			}
+		}
+		if id == "" {
 			id = fmt.Sprintf("linkedin-%d", i)
 		}
 		job := Job{
@@ -283,7 +289,7 @@ func (h *JobsHandler) fetchFromApify(ctx context.Context, query, location string
 			Location:    getString(item, "location", "jobLocation"),
 			ApplyURL:    getString(item, "url", "applyUrl", "jobUrl", "link"),
 			Description: getString(item, "description", "descriptionText", "jobDescription"),
-			PostedAt:    getString(item, "publishedAt", "postedAt", "datePosted"),
+			PostedAt:    getString(item, "postedDate", "publishedAt", "postedAt", "datePosted"),
 			Source:      "linkedin",
 		}
 		if job.Title != "" {
