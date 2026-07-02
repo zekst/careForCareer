@@ -217,18 +217,24 @@ func tierSummary(cand *candidate.Candidate) string {
 	return base
 }
 
-// fetchFromApify calls the Apify LinkedIn Jobs Scraper actor (valig/linkedin-jobs-scraper).
-// Input schema: title (keywords), location (string), limit (int).
+// fetchFromApify calls the Apify LinkedIn Jobs Scraper actor.
+// Actor: curious_coder/linkedin-jobs-scraper — free tier, 111K users, 98.7% success rate.
+// Input schema: urls (array of LinkedIn search URLs, required), count (int), scrapeCompany (bool).
 func (h *JobsHandler) fetchFromApify(ctx context.Context, query, location string, limit int) ([]Job, error) {
-	const actorRef = "valig~linkedin-jobs-scraper"
+	// ID confirmed via Apify store; name format used for stability.
+	const actorRef = "curious_coder~linkedin-jobs-scraper"
 
 	if limit < 1 {
 		limit = 10
 	}
+	searchURL := fmt.Sprintf(
+		"https://www.linkedin.com/jobs/search/?keywords=%s&location=%s&position=1&pageNum=0",
+		url.QueryEscape(query), url.QueryEscape(location),
+	)
 	payload := map[string]interface{}{
-		"title":    query,
-		"location": location,
-		"limit":    limit,
+		"urls":          []string{searchURL},
+		"count":         limit,
+		"scrapeCompany": false, // skip extra per-job company page requests (faster)
 	}
 
 	payloadBytes, _ := json.Marshal(payload)
