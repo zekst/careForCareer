@@ -224,8 +224,8 @@ func (h *JobsHandler) fetchFromApify(ctx context.Context, query, location string
 	// ID confirmed via Apify store; name format used for stability.
 	const actorRef = "curious_coder~linkedin-jobs-scraper"
 
-	if limit < 1 {
-		limit = 10
+	if limit < 10 {
+		limit = 10 // actor enforces count >= 10
 	}
 	searchURL := fmt.Sprintf(
 		"https://www.linkedin.com/jobs/search/?keywords=%s&location=%s&position=1&pageNum=0",
