@@ -20,11 +20,12 @@ import (
 	"careergps/internal/application/auth"
 	coachapp "careergps/internal/application/coach"
 	"careergps/internal/infrastructure/llm"
+	"careergps/internal/infrastructure/pathwayai"
 	"careergps/internal/infrastructure/postgres"
 	redisinfra "careergps/internal/infrastructure/redis"
 	s3infra "careergps/internal/infrastructure/s3"
-	"careergps/internal/interfaces/http/handlers"
 	httpserver "careergps/internal/interfaces/http"
+	"careergps/internal/interfaces/http/handlers"
 	"careergps/pkg/mailer"
 )
 
@@ -104,7 +105,8 @@ func main() {
 	coachHandler := handlers.NewCoachHandler(coachSvc, candidateRepo)
 	jobsHandler := handlers.NewJobsHandler(redisClient, candidateRepo, cfg.ApifyAPIToken, log)
 	positioningHandler := handlers.NewPositioningHandler(candidateRepo, cachedLLM)
-	prepHandler := handlers.NewPrepHandler(coachSvc, candidateRepo, cachedLLM)
+	pathwayAIClient := pathwayai.New(cfg.PathwayAIBaseURL, cfg.PathwayAINamespace)
+	prepHandler := handlers.NewPrepHandler(coachSvc, candidateRepo, cachedLLM, pathwayAIClient)
 	pivotHandler := handlers.NewPivotHandler(candidateRepo, cachedLLM)
 	studentHandler := handlers.NewStudentHandler(cachedLLM)
 

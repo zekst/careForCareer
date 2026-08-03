@@ -23,18 +23,18 @@ type Config struct {
 	RedisAddr     string `mapstructure:"REDIS_ADDR"`
 	RedisPassword string `mapstructure:"REDIS_PASSWORD"`
 
-	S3Endpoint        string `mapstructure:"S3_ENDPOINT"`
-	S3Bucket          string `mapstructure:"S3_BUCKET"`
-	S3Region          string `mapstructure:"S3_REGION"`
-	AWSAccessKeyID    string `mapstructure:"AWS_ACCESS_KEY_ID"`
-	AWSSecretKey      string `mapstructure:"AWS_SECRET_ACCESS_KEY"`
+	S3Endpoint     string `mapstructure:"S3_ENDPOINT"`
+	S3Bucket       string `mapstructure:"S3_BUCKET"`
+	S3Region       string `mapstructure:"S3_REGION"`
+	AWSAccessKeyID string `mapstructure:"AWS_ACCESS_KEY_ID"`
+	AWSSecretKey   string `mapstructure:"AWS_SECRET_ACCESS_KEY"`
 
-	JWTPrivateKeyPath    string `mapstructure:"JWT_PRIVATE_KEY_PATH"`
-	JWTPublicKeyPath     string `mapstructure:"JWT_PUBLIC_KEY_PATH"`
-	JWTPrivateKeyB64     string `mapstructure:"JWT_PRIVATE_KEY_B64"`
-	JWTPublicKeyB64      string `mapstructure:"JWT_PUBLIC_KEY_B64"`
-	AccessTokenTTLMin    int    `mapstructure:"ACCESS_TOKEN_TTL_MINUTES"`
-	RefreshTokenTTLDays  int    `mapstructure:"REFRESH_TOKEN_TTL_DAYS"`
+	JWTPrivateKeyPath   string `mapstructure:"JWT_PRIVATE_KEY_PATH"`
+	JWTPublicKeyPath    string `mapstructure:"JWT_PUBLIC_KEY_PATH"`
+	JWTPrivateKeyB64    string `mapstructure:"JWT_PRIVATE_KEY_B64"`
+	JWTPublicKeyB64     string `mapstructure:"JWT_PUBLIC_KEY_B64"`
+	AccessTokenTTLMin   int    `mapstructure:"ACCESS_TOKEN_TTL_MINUTES"`
+	RefreshTokenTTLDays int    `mapstructure:"REFRESH_TOKEN_TTL_DAYS"`
 
 	AnthropicAPIKey  string `mapstructure:"ANTHROPIC_API_KEY"`
 	ApifyAPIToken    string `mapstructure:"APIFY_API_TOKEN"`
@@ -43,11 +43,18 @@ type Config struct {
 	LLMPrimary       string `mapstructure:"LLM_PRIMARY_PROVIDER"`
 	LLMCacheTTLHours int    `mapstructure:"LLM_CACHE_TTL_HOURS"`
 
-	CoachDailyLimit           int `mapstructure:"COACH_DAILY_LIMIT"`
-	RateLimitUnauthenticated  int `mapstructure:"RATE_LIMIT_UNAUTHENTICATED"`
-	RateLimitAuthenticated    int `mapstructure:"RATE_LIMIT_AUTHENTICATED"`
+	// PathwayAI: standalone skill-intelligence service for grounded, cited
+	// learning recommendations. Optional — when PATHWAYAI_BASE_URL is empty the
+	// client is disabled and the prep plan degrades gracefully (no grounded
+	// resources block), so this integration never breaks the existing flow.
+	PathwayAIBaseURL   string `mapstructure:"PATHWAYAI_BASE_URL"`
+	PathwayAINamespace string `mapstructure:"PATHWAYAI_NAMESPACE"`
 
-	ScoringWeightsPath  string `mapstructure:"SCORING_WEIGHTS_PATH"`
+	CoachDailyLimit          int `mapstructure:"COACH_DAILY_LIMIT"`
+	RateLimitUnauthenticated int `mapstructure:"RATE_LIMIT_UNAUTHENTICATED"`
+	RateLimitAuthenticated   int `mapstructure:"RATE_LIMIT_AUTHENTICATED"`
+
+	ScoringWeightsPath   string `mapstructure:"SCORING_WEIGHTS_PATH"`
 	ScoringEngineVersion string `mapstructure:"SCORING_ENGINE_VERSION"`
 
 	SMTPHost     string `mapstructure:"SMTP_HOST"`
@@ -80,6 +87,8 @@ func Load() (*Config, error) {
 	v.SetDefault("RATE_LIMIT_AUTHENTICATED", 100)
 	v.SetDefault("LLM_PRIMARY_PROVIDER", "anthropic")
 	v.SetDefault("LLM_CACHE_TTL_HOURS", 24)
+	v.SetDefault("PATHWAYAI_BASE_URL", "") // empty = integration disabled
+	v.SetDefault("PATHWAYAI_NAMESPACE", "careforcareer")
 	v.SetDefault("SCORING_WEIGHTS_PATH", "./config/scoring_weights.yaml")
 	v.SetDefault("SCORING_ENGINE_VERSION", "v1.0.0")
 	v.SetDefault("OTEL_EXPORTER_PROMETHEUS_PORT", 9090)
@@ -135,8 +144,8 @@ func (c *Config) IsProduction() bool {
 
 // scoringWeightsFile mirrors the YAML structure.
 type scoringWeightsFile struct {
-	EngineVersion string                     `yaml:"engine_version"`
-	TierWeights   map[int]tierWeightsYAML    `yaml:"tier_weights"`
+	EngineVersion string                  `yaml:"engine_version"`
+	TierWeights   map[int]tierWeightsYAML `yaml:"tier_weights"`
 }
 
 type tierWeightsYAML struct {

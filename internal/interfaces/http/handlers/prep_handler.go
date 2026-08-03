@@ -2,8 +2,8 @@ package handlers
 
 import (
 	"context"
-	"errors"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -15,6 +15,7 @@ import (
 	coachapp "careergps/internal/application/coach"
 	"careergps/internal/domain/coach"
 	"careergps/internal/infrastructure/llm"
+	"careergps/internal/infrastructure/pathwayai"
 	"careergps/internal/infrastructure/postgres"
 	"careergps/internal/infrastructure/sse"
 	"careergps/internal/interfaces/http/middleware"
@@ -26,13 +27,15 @@ type PrepHandler struct {
 	coachSvc      *coachapp.Service
 	candidateRepo *postgres.CandidateRepo
 	llmProvider   llm.LLMProvider
+	pathwayAI     *pathwayai.Client // optional; nil-safe when disabled
 }
 
-func NewPrepHandler(coachSvc *coachapp.Service, candidateRepo *postgres.CandidateRepo, llmProvider llm.LLMProvider) *PrepHandler {
+func NewPrepHandler(coachSvc *coachapp.Service, candidateRepo *postgres.CandidateRepo, llmProvider llm.LLMProvider, pathwayAI *pathwayai.Client) *PrepHandler {
 	return &PrepHandler{
 		coachSvc:      coachSvc,
 		candidateRepo: candidateRepo,
 		llmProvider:   llmProvider,
+		pathwayAI:     pathwayAI,
 	}
 }
 
@@ -193,16 +196,37 @@ type PrepDay struct {
 	Duration string   `json:"duration"` // e.g. "2-3 hours"
 }
 
+// GroundedResource is a learning resource recommended by PathwayAI, grounded in
+// a real content corpus. Unlike the LLM-invented `resource` fields inside the
+// weekly plan, each of these traces back to actual source chunks (Citations) —
+// the frontend can show "why this, and where it came from".
+type GroundedResource struct {
+	Title        string             `json:"title"`
+	AddressesGap string             `json:"addresses_gap"`
+	Rationale    string             `json:"rationale"`
+	Citations    []ResourceCitation `json:"citations"`
+}
+
+// ResourceCitation is one provenance record backing a GroundedResource.
+type ResourceCitation struct {
+	ChunkID string  `json:"chunk_id"`
+	Snippet string  `json:"snippet"`
+	Score   float64 `json:"score"`
+}
+
 // PrepPlanResponse is returned to the frontend.
 type PrepPlanResponse struct {
-	JobTitle       string     `json:"job_title"`
-	Company        string     `json:"company"`
-	TotalWeeks     int        `json:"total_weeks"`
-	TimeToReady    string     `json:"time_to_ready"`
-	OverallMatch   int        `json:"overall_match"`
-	Weeks          []PrepWeek `json:"weeks"`
-	FinalTip       string     `json:"final_tip"`
-	GeneratedAt    string     `json:"generated_at"`
+	JobTitle     string     `json:"job_title"`
+	Company      string     `json:"company"`
+	TotalWeeks   int        `json:"total_weeks"`
+	TimeToReady  string     `json:"time_to_ready"`
+	OverallMatch int        `json:"overall_match"`
+	Weeks        []PrepWeek `json:"weeks"`
+	FinalTip     string     `json:"final_tip"`
+	GeneratedAt  string     `json:"generated_at"`
+	// RecommendedResources is a grounded, cited resources block from PathwayAI.
+	// Omitted entirely when the integration is disabled or unavailable.
+	RecommendedResources []GroundedResource `json:"recommended_resources,omitempty"`
 }
 
 type generatePrepPlanRequest struct {
@@ -324,16 +348,76 @@ Rules:
 		return
 	}
 
+	// Enrich the plan with grounded, cited learning resources from PathwayAI.
+	// Best-effort: any failure (disabled, unreachable, timeout) leaves the plan
+	// intact and simply omits the resources block — the LLM plan still stands.
+	grounded := h.groundedResources(c.Request.Context(), &req)
+
 	c.JSON(http.StatusOK, PrepPlanResponse{
-		JobTitle:     req.JobTitle,
-		Company:      req.Company,
-		TotalWeeks:   plan.TotalWeeks,
-		TimeToReady:  req.TimeToReady,
-		OverallMatch: req.OverallMatch,
-		Weeks:        plan.Weeks,
-		FinalTip:     plan.FinalTip,
-		GeneratedAt:  time.Now().UTC().Format(time.RFC3339),
+		JobTitle:             req.JobTitle,
+		Company:              req.Company,
+		TotalWeeks:           plan.TotalWeeks,
+		TimeToReady:          req.TimeToReady,
+		OverallMatch:         req.OverallMatch,
+		Weeks:                plan.Weeks,
+		FinalTip:             plan.FinalTip,
+		GeneratedAt:          time.Now().UTC().Format(time.RFC3339),
+		RecommendedResources: grounded,
 	})
+}
+
+// groundedResources asks PathwayAI for cited learning content that closes the
+// plan's skill gaps. Returns nil when the integration is disabled or fails —
+// callers must treat the result as purely additive.
+func (h *PrepHandler) groundedResources(ctx context.Context, req *generatePrepPlanRequest) []GroundedResource {
+	if !h.pathwayAI.Enabled() || len(req.SkillGaps) == 0 {
+		return nil
+	}
+
+	gaps := make([]pathwayai.GapInput, 0, len(req.SkillGaps))
+	for _, name := range req.SkillGaps {
+		// The prep request carries gaps as names only; PathwayAI orders by score
+		// and we have no per-gap magnitude here, so leave levels at defaults.
+		gaps = append(gaps, pathwayai.GapInput{Competency: name})
+	}
+
+	profileCtx := fmt.Sprintf(
+		"Candidate targeting %s with %d years of experience; current match %d%%.",
+		req.JobTitle, req.YOE, req.OverallMatch,
+	)
+
+	recs, err := h.pathwayAI.Recommend(ctx, gaps, profileCtx)
+	if err != nil {
+		// Non-fatal: PathwayAI is an optional enhancement. Swallow and continue.
+		return nil
+	}
+
+	out := make([]GroundedResource, 0, len(recs))
+	for _, r := range recs {
+		citations := make([]ResourceCitation, 0, len(r.SourceChunks))
+		for _, sc := range r.SourceChunks {
+			citations = append(citations, ResourceCitation{
+				ChunkID: sc.ChunkID,
+				Snippet: snippet(sc.Text, 160),
+				Score:   sc.Score,
+			})
+		}
+		out = append(out, GroundedResource{
+			Title:        r.Title,
+			AddressesGap: r.AddressesGap,
+			Rationale:    r.Rationale,
+			Citations:    citations,
+		})
+	}
+	return out
+}
+
+// snippet truncates text to at most n characters, appending an ellipsis.
+func snippet(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return strings.TrimSpace(s[:n]) + "…"
 }
 
 // estimateWeeks parses a "time_to_ready" string like "3-4 weeks" into an integer.
